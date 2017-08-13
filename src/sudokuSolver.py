@@ -1,20 +1,40 @@
 #!/usr/bin/env python3
 
-import sys, logging, argparse, pprint
+import sys, logging, argparse, pprint, random
 from  tkinter import *
 DEBUG = False
 MAX_ROWS_COLUMNS=15
 
 class SudokuButton(Button):
     def __init__(self, row, column, master=None, **options):
+        super().__init__(master, options)
         self.row = row
         self.column = column
         self.value = 0 #the zero value is used to indicate that this is an invalid square to the backtracker.
+        self.textvariable = StringVar()
+        self.configure(textvariable = self.textvariable, width=2, height=2)
         self.hard_set = False #used to indicate that this is part of the initial condition and should not be reset when backtracking/solving.
-        super().__init__(master, options)
+
+    def set_value(self, value):
+        self.value = value
+        if (value != 0):
+            self.textvariable.set(str(value)) 
+        else:
+            self.textvariable.set("")
 
     def __repr__(self):
-        return 'SudokuButton(row=%s, column=%s, value=%s, hard_set=%s)' % (self.row, self.column, self.value, self.hard_set)
+        return 'SudokuButton(row=%s, column=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.value, self.textvariable.get(), self.hard_set)
+
+def get_initial_values():
+    return [[5,3,0,0,7,0,0,0,0],
+            [6,0,0,1,9,5,0,0,0],
+            [0,9,8,0,0,0,0,6,0],
+            [8,0,0,0,6,0,0,0,3],
+            [4,0,0,8,0,3,0,0,1],
+            [7,0,0,0,2,0,0,0,6],
+            [0,6,0,0,0,0,2,8,0],
+            [0,0,0,4,1,9,0,0,5],
+            [0,0,0,0,8,0,0,7,9]]
 
 def debug_print_button_array(button_array):
     debug_print(list(button_array), True)
@@ -22,14 +42,19 @@ def debug_print_button_array(button_array):
 def startup_ui(rows, columns):
     root = Tk()
     button_array = []
+    init_values = get_initial_values()
+
     for r in range(rows):
         for c in range(columns):
-            button = SudokuButton(r, c, root, text = "("+str(r+1)+","+str(c+1)+")", borderwidth = 1)
+            button = SudokuButton(r, c, root, borderwidth = 1)
+            button.set_value(init_values[r][c])
             button.grid(row = r,column = c)
             button_array.append(button)
 
     debug_print_button_array(button_array)
-    
+
+    button = Button()
+    debug_print(button.__dir__(), True)
     root.mainloop()
 
 #TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
@@ -68,6 +93,7 @@ def setup_args():
     return (args.rows,args.columns)
 #boilerplate
 def main():
+    random.seed()
     rows,columns = setup_args()
     startup_ui(rows, columns) 
 if __name__ == '__main__':
