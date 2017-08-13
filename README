@@ -1,3 +1,7 @@
 #README
 
 python sudoku solver.
+
+uses python3
+uses tkinter for the gui
+
