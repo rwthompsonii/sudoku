@@ -1,34 +1,44 @@
 #!/usr/bin/env python3
 
-import sys, logging, argparse
+import sys, logging, argparse, pprint
 from  tkinter import *
 DEBUG = False
 MAX_ROWS_COLUMNS=15
 
+class SudokuButton(Button):
+    def __init__(self, row, column, master=None, **options):
+        self.row = row
+        self.column = column
+        self.value = 0 #the zero value is used to indicate that this is an invalid square to the backtracker.
+        self.hard_set = False #used to indicate that this is part of the initial condition and should not be reset when backtracking/solving.
+        super().__init__(master, options)
+
+    def __repr__(self):
+        return 'SudokuButton(row=%s, column=%s, value=%s, hard_set=%s)' % (self.row, self.column, self.value, self.hard_set)
+
+def debug_print_button_array(button_array):
+    debug_print(list(button_array), True)
+
 def startup_ui(rows, columns):
-    root = Tk(  )
+    root = Tk()
+    button_array = []
     for r in range(rows):
         for c in range(columns):
-            Button(root, text = "("+str(r+1)+","+str(c+1)+")",
-                borderwidth = 1 ).grid(row = r,column = c)
+            button = SudokuButton(r, c, root, text = "("+str(r+1)+","+str(c+1)+")", borderwidth = 1)
+            button.grid(row = r,column = c)
+            button_array.append(button)
 
+    debug_print_button_array(button_array)
+    
     root.mainloop()
 
-
-
-
-
-
-
-
-
-
-
-
 #TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
-def debug_print(printme):
+def debug_print(printme, pretty=False):
     if DEBUG:
-        print(printme)
+        if pretty:
+            pprint.pprint(printme)
+        else:
+            print(printme)
 
 def row_or_column_type(x):
     x = int(x)
