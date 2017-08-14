@@ -2,6 +2,7 @@
 
 import sys, logging, argparse, pprint, random
 from  tkinter import *
+from functools import partial
 DEBUG = False
 MAX_ROWS_COLUMNS=15
 
@@ -25,6 +26,7 @@ class SudokuButton(Button):
     def __repr__(self):
         return 'SudokuButton(row=%s, column=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.value, self.textvariable.get(), self.hard_set)
 
+#TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
     return [[5,3,0,0,7,0,0,0,0],
             [6,0,0,1,9,5,0,0,0],
@@ -39,8 +41,16 @@ def get_initial_values():
 def debug_print_button_array(button_array):
     debug_print(list(button_array), True)
 
+def solve_action(button_array):
+    debug_print("Solve button clicked.")
+    debug_print_button_array(button_array)
+
 def startup_ui(rows, columns):
     root = Tk()
+    root.wm_title("Sudoku Solver")   
+    #remove the maximize button.
+    root.resizable(0,0)
+
     button_array = []
     init_values = get_initial_values()
 
@@ -51,10 +61,10 @@ def startup_ui(rows, columns):
             button.grid(row = r,column = c)
             button_array.append(button)
 
-    debug_print_button_array(button_array)
+    #the tkinter framework really wants a no argument function as the callback,
+    #so we give it one by partially applying the argument here.
+    solve_button = Button(root, text="Solve", command=partial(solve_action, button_array)).grid(row=rows+1, columnspan=columns, sticky=E+W+N+S)
 
-    button = Button()
-    debug_print(button.__dir__(), True)
     root.mainloop()
 
 #TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
