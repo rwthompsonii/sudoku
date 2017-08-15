@@ -36,7 +36,7 @@ class SudokuButton(Button):
     def unset_init(self):
         self.hard_set = False
         self.set_value(0)
-        self.configure(bg = "white")
+        self.configure(bg = "light grey")
 
     def set_value(self, value):
         self.value = value
@@ -55,6 +55,11 @@ class SudokuButton(Button):
     def __str__(self):
         return self.__repr__()
 
+#really, this doesn't exist??
+def map_in_place(fn, l):
+    for i in range(len(l)):
+        l[i] = fn(l[i])
+
 #TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
     return [[5,3,0,0,7,0,0,0,0],
@@ -70,14 +75,15 @@ def get_initial_values():
 def debug_print_button_array(button_array):
     debug_print(list(button_array), True)
 
-def isqrt(n):
+def isqrt(n, raiseOnError = True):
     #from https://stackoverflow.com/questions/15390807/integer-square-root-in-python/17495624
     #i don't really care that it overflows on large values because the input size is sanitized
     #much earlier.
     i = int(math.sqrt(n) + 0.5)
     if i**2 == n:
         return i
-    raise ValueError('input rows/columns were not a perfect square')
+    if raiseOnError == True:
+        raise ValueError('input rows/columns were not a perfect square')
 
 #this function is the only one that actually requires a perfect square input.
 def isValueInSameBlock(button_array, pot_value):
@@ -113,6 +119,17 @@ def isValueInRowOrColumn(button_array, pot_value):
 
 def isNewValueValid(button_array, pot_value):
     return not isValueInSameBlock(button_array, pot_value) and not isValueInRowOrColumn(button_array, pot_value) 
+
+def clear_button_func(full_clear, button):
+    if button.hard_set == False:
+        button.set_value(0)
+    elif full_clear == True:
+        button.unset_init()
+    return button
+
+def clear_action(full_clear, button_array):
+    debug_print("Clear button clicked.")
+    map_in_place(partial(clear_button_func, full_clear), button_array)
 
 def solve_action(button_array):
     debug_print("Solve button clicked.")
@@ -175,6 +192,8 @@ def startup_ui(rows, columns):
     #the tkinter framework really wants a no argument function as the callback,
     #so we give it one by partially applying the argument here.
     solve_button = Button(root, text="Solve", command=partial(solve_action, button_array)).grid(row=rows+1, columnspan=columns, sticky=E+W+N+S)
+    clear_button = Button(root, text="Clear", command=partial(clear_action, False, button_array)).grid(row=rows+2, columnspan=columns, sticky=E+W+N+S)
+    full_clear_button = Button(root, text="Full Clear", command=partial(clear_action, True, button_array)).grid(row=rows+3, columnspan=columns, sticky=E+W+N+S)
 
     root.mainloop()
 
