@@ -2,12 +2,16 @@
 
 import sys, logging, argparse, pprint, random, math
 from  tkinter import *
+import tkinter.messagebox as messagebox
+import tkinter.simpledialog as simpledialog
 from functools import partial
 from operator import attrgetter
 
 #constants
 DEBUG = False
 MAX_ROWS_COLUMNS=15
+
+total_guesses = 0 
 
 class PotentialValue():
     def __init__(self, row, column, value):
@@ -46,8 +50,14 @@ class SudokuButton(Button):
             self.textvariable.set("")
     
     def on_button_clicked(self):
-        debug_print("button clicked, location: [{0.row},{0.column}]".format(self))
-        debug_print(self.__repr__())
+        if not self.hard_set:
+            new_value = simpledialog.askinteger("Enter a value.", "Number between 1-9, 0 to clear", minvalue=0, maxvalue=9)
+            if (new_value is not None):
+                self.set_value(new_value)
+        else:
+            messagebox.showerror("Sudoku Solver", "May not unset initial condition.")
+        #debug_print("button clicked, location: [{0.row},{0.column}]".format(self))
+        #debug_print(self.__repr__())
 
     def __repr__(self):
         return 'SudokuButton(row=%s, column=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.value, self.textvariable.get(), self.hard_set)
@@ -128,16 +138,28 @@ def clear_button_func(full_clear, button):
     return button
 
 def clear_action(full_clear, button_array):
-    debug_print("Clear button clicked.")
+    debug_print("Clear action.")
+    reset_guesses_count_action()
     map_in_place(partial(clear_button_func, full_clear), button_array)
 
 def solve_action(button_array):
-    debug_print("Solve button clicked.")
-    #debug_print_button_array(button_array)
+    debug_print("Solve action.")
+    
+    clear_action(False, button_array)
+    
     solved = guess(button_array)
     if solved == True:
         debug_print("All done.")
+    else:
+        debug_print("cannot be solved.")
+        isYes = messagebox.askyesno("Sudoku Solver", "No solution found.  Full clear the board?")
+        if (isYes): 
+            clear_action(True, button_array)
 
+def reset_guesses_count_action():
+    global total_guesses
+    total_guesses.set(0)
+     
 def guess(button_array):
     first_empty = next(filter(lambda i: i.value == 0 and i.hard_set == False, button_array), None)
     debug_print("working on first_empty: %s" % (first_empty))
@@ -148,6 +170,8 @@ def guess(button_array):
         #debug_print(randoms)
         
         for r in randoms:
+            global total_guesses
+            total_guesses.set(total_guesses.get() + 1)
             pot_value = PotentialValue(first_empty.row, first_empty.column, r)
             if isNewValueValid(button_array, pot_value):
                 for button in button_array:
@@ -165,14 +189,14 @@ def guess(button_array):
     else:
         return True #all done, the remaining values are filled.
 
-    
-
 def startup_ui(rows, columns):
     root = Tk()
     root.wm_title("Sudoku Solver")   
     #remove the maximize button.
     root.resizable(0,0)
 
+    global total_guesses
+    total_guesses = IntVar()
     button_array = []
     init_values = get_initial_values()
 
@@ -194,7 +218,8 @@ def startup_ui(rows, columns):
     solve_button = Button(root, text="Solve", command=partial(solve_action, button_array)).grid(row=rows+1, columnspan=columns, sticky=E+W+N+S)
     clear_button = Button(root, text="Clear", command=partial(clear_action, False, button_array)).grid(row=rows+2, columnspan=columns, sticky=E+W+N+S)
     full_clear_button = Button(root, text="Full Clear", command=partial(clear_action, True, button_array)).grid(row=rows+3, columnspan=columns, sticky=E+W+N+S)
-
+    reset_guesses_button = Button(root, textvariable=total_guesses, command=reset_guesses_count_action).grid(row=rows+4, columnspan=columns, sticky=E+W+N+S)
+    reset_guesses_label = Label(root, text="Total Guesses:").grid(row=rows+4, columnspan=int(columns/2), sticky=E+W+N+S)
     root.mainloop()
 
 #TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
