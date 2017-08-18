@@ -9,3 +9,8 @@ def map_in_place(fn, l):
 def lambda_find_first(function, iterable, default_value=None):
     return next(filter(function, iterable), default_value)
 
+#boilerplate
+def main():
+    raise Exception("do not directly call this module.")
+if __name__ == '__main__':
+    main()

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 
-import sys, logging, argparse, pprint, random, math
+import sys, logging, argparse, pprint, random, math, os
 from  tkinter import *
 import tkinter.messagebox as messagebox
 import tkinter.simpledialog as simpledialog
 from functools import partial
 from operator import attrgetter
 
+#my own libraries
+import sudoku.utils as utils
+
 #constants
 DEBUG = False
 MAX_ROWS_COLUMNS=15
 
+#one global
 total_guesses = 0 
 
+#class definitions: TODO move these to files so I don't depend on order.
 class PotentialValue():
     def __init__(self, row, column, value):
         self.row = row
@@ -48,7 +53,12 @@ class SudokuButton(Button):
             self.textvariable.set(str(value)) 
         else:
             self.textvariable.set("")
-    
+   
+    #XXX: This function currently exposes a bug where if the user inputs an invalid value,
+    #XXX: the solver has issues with that, since it starts from the assumption (currently)
+    #XXX: that everything its given is valid, and sometimes will "solve" it.
+    #XXX: fix the solver to actually check the initial conditions for impossibility,
+    #XXX: and fix this function to not allow illegal input other than initial conditions.
     def on_button_clicked(self):
         if not self.hard_set:
             new_value = simpledialog.askinteger("Enter a value.", "Number between 1-9, 0 to clear", minvalue=0, maxvalue=9)
@@ -64,17 +74,6 @@ class SudokuButton(Button):
 
     def __str__(self):
         return self.__repr__()
-
-#really, this doesn't exist??
-def map_in_place(fn, l):
-    for i in range(len(l)):
-        l[i] = fn(l[i])
-
-#or this?!
-#this likely should assert that its arguments are callable and iterable.
-#TODO: define a debug_assert function to use here.
-def lambda_find_first(function, iterable, default_value=None):
-    return next(filter(function, iterable), default_value)
 
 #TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
@@ -118,7 +117,7 @@ def isValueInSameBlock(button_array, pot_value):
     end_row = start_row + block_size
     end_column = start_column + block_size
 
-    return lambda_find_first(lambda b: b.row >= start_row and \
+    return utils.lambda_find_first(lambda b: b.row >= start_row and \
                                        b.row < end_row and \
                                        b.column >= start_column and \
                                        b.column < end_column and \
@@ -130,7 +129,7 @@ def isValueInRowOrColumn(button_array, pot_value):
     row_check = lambda b: b.column != pot_value.column and b.row == pot_value.row and b.value == pot_value.value
     column_check = lambda b: b.row != pot_value.row and b.column == pot_value.column and b.value == pot_value.value
 
-    return lambda_find_first(lambda b: row_check(b) or column_check(b), button_array) is not None
+    return utils.lambda_find_first(lambda b: row_check(b) or column_check(b), button_array) is not None
 
 def isNewValueValid(button_array, pot_value):
     return not isValueInSameBlock(button_array, pot_value) and not isValueInRowOrColumn(button_array, pot_value) 
@@ -145,7 +144,7 @@ def clear_button_func(full_clear, button):
 def clear_action(full_clear, button_array):
     debug_print("Clear action.")
     reset_guesses_count_action()
-    map_in_place(partial(clear_button_func, full_clear), button_array)
+    utils.map_in_place(partial(clear_button_func, full_clear), button_array)
 
 def solve_action(button_array):
     debug_print("Solve action.")
@@ -164,7 +163,7 @@ def reset_guesses_count_action():
     total_guesses.set(0)
      
 def guess(button_array):
-    first_empty = lambda_find_first(lambda i: i.value == 0 and i.hard_set == False, button_array)
+    first_empty = utils.lambda_find_first(lambda i: i.value == 0 and i.hard_set == False, button_array)
     debug_print("working on first_empty: %s" % (first_empty))
     if first_empty is not None:
         randoms = list(range(1,10))
@@ -175,7 +174,7 @@ def guess(button_array):
             total_guesses.set(total_guesses.get() + 1)
             pot_value = PotentialValue(first_empty.row, first_empty.column, r)
             if isNewValueValid(button_array, pot_value):
-                update_button = lambda_find_first(lambda i: i.row == first_empty.row and i.column == first_empty.column, button_array)
+                update_button = utils.lambda_find_first(lambda i: i.row == first_empty.row and i.column == first_empty.column, button_array)
                 assert update_button is not None
 
                 update_button.set_value(pot_value.value)
@@ -257,6 +256,7 @@ def setup_args():
     DEBUG = args.debug
     debug_print("Debugging information is turned on")
     return (args.rows,args.columns)
+
 #boilerplate
 def main():
     random.seed()

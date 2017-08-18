@@ -5,3 +5,5 @@ python sudoku solver.
 uses python3
 uses tkinter for the gui
 
+
+usage: Execute python3 -m sudoku.sudokuSolver <name> in src/sudoku directory.
