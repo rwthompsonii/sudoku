@@ -70,6 +70,12 @@ def map_in_place(fn, l):
     for i in range(len(l)):
         l[i] = fn(l[i])
 
+#or this?!
+#this likely should assert that its arguments are callable and iterable.
+#TODO: define a debug_assert function to use here.
+def lambda_find_first(function, iterable, default_value=None):
+    return next(filter(function, iterable), default_value)
+
 #TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
     return [[5,3,0,0,7,0,0,0,0],
@@ -108,24 +114,23 @@ def isValueInSameBlock(button_array, pot_value):
     start_row = pot_value.row - (pot_value.row % block_size)
     start_column = pot_value.column - (pot_value.column % block_size)
 
-    #end row is not inclusive, it's actually the start of the next block
+    #end row/column are not inclusive, that's actually the start of the next block
     end_row = start_row + block_size
     end_column = start_column + block_size
 
-    for button in button_array:
-        if button.row >= start_row and button.row < end_row and button.column >= start_column and button.column < end_column and button.value == pot_value.value:
-            return True
-
-    return False
-
+    return lambda_find_first(lambda b: b.row >= start_row and \
+                                       b.row < end_row and \
+                                       b.column >= start_column and \
+                                       b.column < end_column and \
+                                       b.value == pot_value.value, \
+                             button_array) \
+                                is not None
+    
 def isValueInRowOrColumn(button_array, pot_value):
-    for button in button_array:
-        if button.column != pot_value.column and button.row == pot_value.row and button.value == pot_value.value: #don't check the same button...
-            return True
-        if button.row != pot_value.row and button.column == pot_value.column and button.value == pot_value.value: #don't check the same button... 
-            return True
+    row_check = lambda b: b.column != pot_value.column and b.row == pot_value.row and b.value == pot_value.value
+    column_check = lambda b: b.row != pot_value.row and b.column == pot_value.column and b.value == pot_value.value
 
-    return False
+    return lambda_find_first(lambda b: row_check(b) or column_check(b), button_array) is not None
 
 def isNewValueValid(button_array, pot_value):
     return not isValueInSameBlock(button_array, pot_value) and not isValueInRowOrColumn(button_array, pot_value) 
@@ -144,9 +149,7 @@ def clear_action(full_clear, button_array):
 
 def solve_action(button_array):
     debug_print("Solve action.")
-    
-    clear_action(False, button_array)
-    
+   
     solved = guess(button_array)
     if solved == True:
         debug_print("All done.")
@@ -161,29 +164,27 @@ def reset_guesses_count_action():
     total_guesses.set(0)
      
 def guess(button_array):
-    first_empty = next(filter(lambda i: i.value == 0 and i.hard_set == False, button_array), None)
+    first_empty = lambda_find_first(lambda i: i.value == 0 and i.hard_set == False, button_array)
     debug_print("working on first_empty: %s" % (first_empty))
     if first_empty is not None:
-        #debug_print(first_empty.__repr__())
         randoms = list(range(1,10))
         random.shuffle(randoms)
-        #debug_print(randoms)
         
         for r in randoms:
             global total_guesses
             total_guesses.set(total_guesses.get() + 1)
             pot_value = PotentialValue(first_empty.row, first_empty.column, r)
             if isNewValueValid(button_array, pot_value):
-                for button in button_array:
-                    if button.row == first_empty.row and button.column == first_empty.column:
-                        button.set_value(pot_value.value)
+                update_button = lambda_find_first(lambda i: i.row == first_empty.row and i.column == first_empty.column, button_array)
+                assert update_button is not None
+
+                update_button.set_value(pot_value.value)
+
                 if guess(button_array):
                    return True #start unwinding
                 else:
-                    for button in button_array:
-                        if button.row == first_empty.row and button.column == first_empty.column:
-                            button.set_value(0)
-        
+                    update_button.set_value(0)
+
         #if we make it here then none of the random values were valid.  start unwinding.
         return False
     else:
