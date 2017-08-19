@@ -3,77 +3,17 @@
 import sys, logging, argparse, pprint, random, math, os
 from  tkinter import *
 import tkinter.messagebox as messagebox
-import tkinter.simpledialog as simpledialog
 from functools import partial
 from operator import attrgetter
 
 #my own libraries
 import sudoku.utils as utils
-
-#constants
-DEBUG = False
-MAX_ROWS_COLUMNS=15
-
-#one global
-total_guesses = 0 
-
-#class definitions: TODO move these to files so I don't depend on order.
-class PotentialValue():
-    def __init__(self, row, column, value):
-        self.row = row
-        self.column = column
-        self.value = value
-
-    def __repr__():
-        return 'PotentialValue(row = %s, column = %s, value = %s) % self.row, self.column, self.value'
-
-class SudokuButton(Button):
-    def __init__(self, row, column, master=None, **options):
-        super().__init__(master, options)
-        self.row = row
-        self.column = column
-        self.value = 0 #the zero value is used to indicate that this is an invalid square to the backtracker.
-        self.textvariable = StringVar()
-        self.hard_set = False #used to indicate that this is part of the initial condition and should not be reset when backtracking/solving.
-        self.configure(textvariable = self.textvariable, width=2, height=2, command=self.on_button_clicked)
-
-    def set_init(self, value):
-        self.set_value(value)
-        self.hard_set = True
-        self.configure(bg = "gray")
-
-    def unset_init(self):
-        self.hard_set = False
-        self.set_value(0)
-        self.configure(bg = "light grey")
-
-    def set_value(self, value):
-        self.value = value
-        if (value != 0):
-            self.textvariable.set(str(value)) 
-        else:
-            self.textvariable.set("")
-   
-    #XXX: This function currently exposes a bug where if the user inputs an invalid value,
-    #XXX: the solver has issues with that, since it starts from the assumption (currently)
-    #XXX: that everything its given is valid, and sometimes will "solve" it.
-    #XXX: fix the solver to actually check the initial conditions for impossibility,
-    #XXX: and fix this function to not allow illegal input other than initial conditions.
-    def on_button_clicked(self):
-        if not self.hard_set:
-            new_value = simpledialog.askinteger("Enter a value.", "Number between 1-9, 0 to clear", minvalue=0, maxvalue=9)
-            if (new_value is not None):
-                self.set_value(new_value)
-        else:
-            messagebox.showerror("Sudoku Solver", "May not unset initial condition.")
-        #debug_print("button clicked, location: [{0.row},{0.column}]".format(self))
-        #debug_print(self.__repr__())
-
-    def __repr__(self):
-        return 'SudokuButton(row=%s, column=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.value, self.textvariable.get(), self.hard_set)
-
-    def __str__(self):
-        return self.__repr__()
+from sudoku.utils import debug_print
+import sudoku.buttons as buttons
+import sudoku.structs as structs
+from sudoku.constants import DEBUG
+from sudoku.constants import MAX_ROWS_COLUMNS
+import sudoku.globals as globals
 
 #TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
@@ -159,8 +99,7 @@ def solve_action(button_array):
             clear_action(True, button_array)
 
 def reset_guesses_count_action():
-    global total_guesses
-    total_guesses.set(0)
+    globals.total_guesses.set(0)
      
 def guess(button_array):
     first_empty = utils.lambda_find_first(lambda i: i.value == 0 and i.hard_set == False, button_array)
@@ -170,9 +109,8 @@ def guess(button_array):
         random.shuffle(randoms)
         
         for r in randoms:
-            global total_guesses
-            total_guesses.set(total_guesses.get() + 1)
-            pot_value = PotentialValue(first_empty.row, first_empty.column, r)
+            globals.total_guesses.set(globals.total_guesses.get() + 1)
+            pot_value = structs.PotentialValue(first_empty.row, first_empty.column, r)
             if isNewValueValid(button_array, pot_value):
                 update_button = utils.lambda_find_first(lambda i: i.row == first_empty.row and i.column == first_empty.column, button_array)
                 assert update_button is not None
@@ -195,14 +133,13 @@ def startup_ui(rows, columns):
     #remove the maximize button.
     root.resizable(0,0)
 
-    global total_guesses
-    total_guesses = IntVar()
+    globals.total_guesses = IntVar()
     button_array = []
     init_values = get_initial_values()
 
     for r in range(rows):
         for c in range(columns):
-            button = SudokuButton(r, c, root, borderwidth = 1)
+            button = buttons.SudokuButton(r, c, root, borderwidth = 1)
             
             #TODO: all this init code is just to debug the solver.  Need to init smarter.
             init_value = init_values[r][c]
@@ -218,17 +155,9 @@ def startup_ui(rows, columns):
     solve_button = Button(root, text="Solve", command=partial(solve_action, button_array)).grid(row=rows+1, columnspan=columns, sticky=E+W+N+S)
     clear_button = Button(root, text="Clear", command=partial(clear_action, False, button_array)).grid(row=rows+2, columnspan=columns, sticky=E+W+N+S)
     full_clear_button = Button(root, text="Full Clear", command=partial(clear_action, True, button_array)).grid(row=rows+3, columnspan=columns, sticky=E+W+N+S)
-    reset_guesses_button = Button(root, textvariable=total_guesses, command=reset_guesses_count_action).grid(row=rows+4, columnspan=columns, sticky=E+W+N+S)
+    reset_guesses_button = Button(root, textvariable=globals.total_guesses, command=reset_guesses_count_action).grid(row=rows+4, columnspan=columns, sticky=E+W+N+S)
     reset_guesses_label = Label(root, text="Total Guesses:").grid(row=rows+4, columnspan=int(columns/2), sticky=E+W+N+S)
     root.mainloop()
-
-#TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
-def debug_print(printme, pretty=False):
-    if DEBUG:
-        if pretty:
-            pprint.pprint(printme)
-        else:
-            print(printme)
 
 def row_or_column_type(x):
     x = int(x)
@@ -252,7 +181,6 @@ def setup_args():
 
     args = arg_parser.parse_args()
     print("Hello, welcome to sudoku solver: ", args.name)
-    global DEBUG
     DEBUG = args.debug
     debug_print("Debugging information is turned on")
     return (args.rows,args.columns)
