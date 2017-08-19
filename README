@@ -6,4 +6,4 @@ uses python3
 uses tkinter for the gui
 
 
-usage: Execute python3 -m sudoku.sudokuSolver <name> in src directory.
+usage: Execute python3 -m sudoku.solver <name> in src directory.
