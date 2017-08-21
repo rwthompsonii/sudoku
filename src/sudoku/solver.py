@@ -6,6 +6,7 @@ import tkinter.messagebox as messagebox
 import tkinter.simpledialog as simpledialog
 from functools import partial, reduce
 from operator import attrgetter
+from threading import Timer
 
 #my own libraries
 import sudoku.utils as utils
@@ -37,6 +38,17 @@ def get_initial_values():
             [0,6,0,0,0,0,2,8,0],
             [0,0,0,4,1,9,0,0,5],
             [0,0,0,0,8,0,0,7,9]]
+
+def get_harder_initial_values():
+    return [[0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,3,0,8,5],
+            [0,0,1,0,2,0,0,0,0],
+            [0,0,0,5,0,7,0,0,0],
+            [0,0,4,0,0,0,1,0,0],
+            [0,9,0,0,0,0,0,0,0],
+            [5,0,0,0,0,0,0,7,3],
+            [0,0,2,0,1,0,0,0,0],
+            [0,0,0,0,4,0,0,0,9]] 
 
 def isqrt(n, raiseOnError = True):
     #from https://stackoverflow.com/questions/15390807/integer-square-root-in-python/17495624
@@ -119,7 +131,7 @@ def calculate_optimal_choice(button_array, all_empties):
     #map a function over all the empties which then sets the number of available choices it finds onto the button 
     utils.map_in_place(partial(set_choices_for_button, button_array), all_empties)
     
-    #next, min the entire empties list with the function being to return the number of available choices.
+    #next, min the entire empties list with available choices as the determinant.
     #and return the result of that operation
     return min(all_empties, key=lambda e: len(e.available_choices))
 
@@ -144,7 +156,7 @@ def solve_action(button_array):
     solved = guess(button_array)
     end_time = time.perf_counter()
     if solved == True:
-        logger.info("All done. Time for solve: %s" % float('%.3g' % (end_time - start_time)))
+        logger.info("All done. Time to solve: %s" % float('%.3g' % (end_time - start_time)))
     else:
         logger.info("Cannot be solved. Time for attempt: %s" % float('%.3g' % (end_time - start_time)))
         isYes = messagebox.askyesno("Sudoku Solver", "No solution found.  Full clear the board?")
@@ -154,6 +166,17 @@ def solve_action(button_array):
 def reset_guesses_count_action():
     globals.total_guesses.set(0)
      
+def update_ui():
+    #debug_print('update_ui')
+    global root
+    root.update()
+
+def maybe_update_ui():
+    now_time = time.perf_counter()
+    if (now_time - globals.refresh_ui_time) > 1.0:
+        globals.refresh_ui_time = now_time
+        update_ui()
+
 def guess(button_array):
     chosen_empty = None
     all_empties = list(filter(lambda i: i.value == 0 and i.hard_set == False, button_array))
@@ -163,20 +186,26 @@ def guess(button_array):
 
     if chosen_empty is not None:
         debug_print("working on chosen_empty: %s" % (chosen_empty))
-       
-        for c in chosen_empty.available_choices:
+        #some puzzles are built to mess with us if we don't introduce at least a small 
+        #amount of randomness.  we're working with the optimal button, but it has 1-9 choices
+        #and you can construct sudokus that really like to mess with solvers that start with 1.
+        available_choices = list(chosen_empty.available_choices)
+        random.shuffle(available_choices)
+        
+        update_button = utils.find(lambda i: i.row == chosen_empty.row and i.column == chosen_empty.column, button_array)
+        assert update_button is not None
+        
+        for c in available_choices:
             globals.total_guesses.set(globals.total_guesses.get() + 1)
-            pot_value = structs.PotentialValue(chosen_empty.row, chosen_empty.column, c)
-            if isNewValueValid(button_array, pot_value):
-                update_button = utils.find(lambda i: i.row == chosen_empty.row and i.column == chosen_empty.column, button_array)
-                assert update_button is not None
+            
+            maybe_update_ui()   
 
-                update_button.set_value(pot_value.value)
+            update_button.set_value(c)
 
-                if guess(button_array):
-                   return True #start unwinding
-                else:
-                    update_button.set_value(0)
+            if guess(button_array):
+                return True #start unwinding
+            else:
+                update_button.set_value(0)
 
         #if we make it here then one of the previous values was invalid.  start unwinding.
         return False
@@ -205,6 +234,8 @@ def on_button_clicked(button_array, button):
         messagebox.showerror("Sudoku Solver", "May not unset initial condition.")
 
 def startup_ui(rows, columns):
+    #hack global to update the UI?
+    global root
     root = Tk()
     root.wm_title("Sudoku Solver")   
     #remove the maximize button.
@@ -214,11 +245,27 @@ def startup_ui(rows, columns):
     button_array = []
 
     #TODO: this needs to be initializable from somewhere besides this code.
-    init_values = get_initial_values()
+    #init_values = get_initial_values()
+    init_values = get_harder_initial_values()
 
+    assert isqrt(rows) != -1
+    assert rows == columns
+    block_size = isqrt(rows)
+    
+    frame_array = []
     for r in range(rows):
         for c in range(columns):
-            button = buttons.SudokuButton(r, c, root, borderwidth = 1)
+            if r % block_size == 0 and c % block_size == 0:
+                frame = Frame(root, borderwidth=2, background="black")
+                frame.grid(row = (r // block_size), column = (c // block_size))
+                frame_array.append(frame)
+    
+    for r in range(rows):
+        for c in range(columns):
+            correct_frame_index = (r // block_size) * block_size + (c // block_size)      
+            correct_frame = frame_array[correct_frame_index]
+
+            button = buttons.SudokuButton(r, c, correct_frame, borderwidth = 1)
             button.configure(command=partial(on_button_clicked, button_array, button))
             
             #TODO: all this init code is just to write the solver.  Need to init smarter.
@@ -227,7 +274,7 @@ def startup_ui(rows, columns):
                 button.set_init(init_values[r][c])
                 button.hard_set = True
             
-            button.grid(row = r,column = c)
+            button.grid(row = (r % block_size), column = (c % block_size))
             button_array.append(button)
 
     #the tkinter framework really wants a no argument function as the callback,
@@ -235,8 +282,10 @@ def startup_ui(rows, columns):
     solve_button = Button(root, text="Solve", command=partial(solve_action, button_array)).grid(row=rows+1, columnspan=columns, sticky=E+W+N+S)
     clear_button = Button(root, text="Clear", command=partial(clear_action, False, button_array)).grid(row=rows+2, columnspan=columns, sticky=E+W+N+S)
     full_clear_button = Button(root, text="Full Clear", command=partial(clear_action, True, button_array)).grid(row=rows+3, columnspan=columns, sticky=E+W+N+S)
-    reset_guesses_button = Button(root, textvariable=globals.total_guesses, command=reset_guesses_count_action).grid(row=rows+4, columnspan=columns, sticky=E+W+N+S)
-    reset_guesses_label = Label(root, text="Total Guesses:").grid(row=rows+4, columnspan=int(columns/2), sticky=E+W+N+S)
+    reset_guesses_button = Button(root, textvariable=globals.total_guesses, command=reset_guesses_count_action).grid(row=rows+4, columnspan=columns, sticky=E+N+S)
+    reset_guesses_label = Label(root, text="Total Guesses:").grid(row=rows+4, columnspan=columns//2, sticky=W+N+S)
+    
+    #and go into the main loop
     root.mainloop()
 
 """

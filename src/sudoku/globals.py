@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-#one global
 total_guesses = 0
+refresh_ui_time = 0.0 
 
 #boilerplate
 def main():
