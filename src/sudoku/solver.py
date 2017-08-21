@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 
-import sys, logging, argparse, pprint, random, math, os
+import sys, logging, argparse, pprint, random, math, os, time
 from  tkinter import *
 import tkinter.messagebox as messagebox
-from functools import partial
+import tkinter.simpledialog as simpledialog
+from functools import partial, reduce
 from operator import attrgetter
 
 #my own libraries
 import sudoku.utils as utils
-from sudoku.utils import debug_print
 import sudoku.buttons as buttons
 import sudoku.structs as structs
 from sudoku.constants import DEBUG
 from sudoku.constants import MAX_ROWS_COLUMNS
 import sudoku.globals as globals
+
+#TODO: this can be done more effectively with Logging, but i'll deal with that in a bit
+def debug_print(printme, pretty=False):
+    if pretty:
+        printme = pprint.pformat(printme)
+    
+    logger = logging.getLogger(__name__)
+    logger.debug(printme)
+
+def debug_print_button_array(button_array):
+    debug_print(list(button_array), True)
 
 #TODO: these need to come from user input or at least a .conf file
 def get_initial_values():
@@ -27,9 +38,6 @@ def get_initial_values():
             [0,0,0,4,1,9,0,0,5],
             [0,0,0,0,8,0,0,7,9]]
 
-def debug_print_button_array(button_array):
-    debug_print(list(button_array), True)
-
 def isqrt(n, raiseOnError = True):
     #from https://stackoverflow.com/questions/15390807/integer-square-root-in-python/17495624
     #i don't really care that it overflows on large values because the input size is sanitized
@@ -39,16 +47,10 @@ def isqrt(n, raiseOnError = True):
         return i
     if raiseOnError == True:
         raise ValueError('input rows/columns were not a perfect square')
+    else:
+        return -1 #clearly not possible
 
-#this function is the only one that actually requires a perfect square input.
-def isValueInSameBlock(button_array, pot_value):
-    max_row = max(button_array, key=attrgetter('row')).row
-    max_column = max(button_array, key=attrgetter('column')).column
-    
-    #these two statements ensure that the given inputs make nice blocks.
-    assert max_row == max_column
-    block_size = isqrt(max_row + 1)
-
+def isButtonInBlock(b, pot_value, block_size):
     #the modulus will be zero if i'm already on the starting row/column.
     start_row = pot_value.row - (pot_value.row % block_size)
     start_column = pot_value.column - (pot_value.column % block_size)
@@ -57,22 +59,69 @@ def isValueInSameBlock(button_array, pot_value):
     end_row = start_row + block_size
     end_column = start_column + block_size
 
-    return utils.lambda_find_first(lambda b: b.row >= start_row and \
-                                       b.row < end_row and \
-                                       b.column >= start_column and \
-                                       b.column < end_column and \
-                                       b.value == pot_value.value, \
-                             button_array) \
-                                is not None
+    return b.row >= start_row and \
+           b.row < end_row and \
+           b.column >= start_column and \
+           b.column < end_column
+
+#this function is the only one that actually requires a perfect square input.
+def get_block_size(button_array):
+    max_row = max(button_array, key=attrgetter('row')).row
+    max_column = max(button_array, key=attrgetter('column')).column
+    
+    #these two statements ensure that the given inputs make nice blocks.
+    assert max_row == max_column
+    block_size = isqrt(max_row + 1)
+
+    return block_size
+
+def isValueInSameBlock(button_array, pot_value):
+    block_size = get_block_size(button_array)
+
+    return utils.find(lambda b: isButtonInBlock(b, pot_value, block_size) and b.value == pot_value.value, button_array) \
+                        is not None
     
 def isValueInRowOrColumn(button_array, pot_value):
     row_check = lambda b: b.column != pot_value.column and b.row == pot_value.row and b.value == pot_value.value
     column_check = lambda b: b.row != pot_value.row and b.column == pot_value.column and b.value == pot_value.value
 
-    return utils.lambda_find_first(lambda b: row_check(b) or column_check(b), button_array) is not None
+    return utils.find(lambda b: row_check(b) or column_check(b), button_array) is not None
 
 def isNewValueValid(button_array, pot_value):
     return not isValueInSameBlock(button_array, pot_value) and not isValueInRowOrColumn(button_array, pot_value) 
+
+def set_choices_for_button(button_array, empty_button):
+    pot_value = structs.PotentialValue(empty_button.row, empty_button.column, empty_button.value)
+    block_size = get_block_size(button_array)    
+    
+    #function defined to look at the choice set defined by 
+    #   1) row peers
+    #   2) column peers
+    #   3) block peers
+    is_peer = lambda b : b.row == empty_button.row or b.column == empty_button.column or isButtonInBlock(b, pot_value, block_size)
+    is_empty = lambda b : b.value == 0
+    is_relevant = lambda b: is_peer(b) and not is_empty(b)
+    relevant_peer_list = list(filter(is_relevant, button_array))
+    currently_valid_choices = set(range(1,10))
+
+    #remove any choice that's aleady present in the peer group, and you're left with the only valid choices for this button.
+    #entirely possible to be left with the empty set, which should be noticed by other code as an impossibility for a valid empty button.
+    for p in relevant_peer_list:
+        currently_valid_choices.discard(p.value)
+
+    empty_button.available_choices = currently_valid_choices
+    return empty_button
+
+def calculate_optimal_choice(button_array, all_empties):
+    #given a set of empty choices, find the one with the minimum number of available choices.
+    #this is somewhat of a heuristic, as it's typically how a human would solve it.
+
+    #map a function over all the empties which then sets the number of available choices it finds onto the button 
+    utils.map_in_place(partial(set_choices_for_button, button_array), all_empties)
+    
+    #next, min the entire empties list with the function being to return the number of available choices.
+    #and return the result of that operation
+    return min(all_empties, key=lambda e: len(e.available_choices))
 
 def clear_button_func(full_clear, button):
     if button.hard_set == False:
@@ -89,11 +138,15 @@ def clear_action(full_clear, button_array):
 def solve_action(button_array):
     debug_print("Solve action.")
    
+    logger = logging.getLogger(__name__)
+   
+    start_time = time.perf_counter()
     solved = guess(button_array)
+    end_time = time.perf_counter()
     if solved == True:
-        debug_print("All done.")
+        logger.info("All done. Time for solve: %s" % float('%.3g' % (end_time - start_time)))
     else:
-        debug_print("cannot be solved.")
+        logger.info("Cannot be solved. Time for attempt: %s" % float('%.3g' % (end_time - start_time)))
         isYes = messagebox.askyesno("Sudoku Solver", "No solution found.  Full clear the board?")
         if (isYes): 
             clear_action(True, button_array)
@@ -102,17 +155,20 @@ def reset_guesses_count_action():
     globals.total_guesses.set(0)
      
 def guess(button_array):
-    first_empty = utils.lambda_find_first(lambda i: i.value == 0 and i.hard_set == False, button_array)
-    debug_print("working on first_empty: %s" % (first_empty))
-    if first_empty is not None:
-        randoms = list(range(1,10))
-        random.shuffle(randoms)
-        
-        for r in randoms:
+    chosen_empty = None
+    all_empties = list(filter(lambda i: i.value == 0 and i.hard_set == False, button_array))
+    
+    if len(all_empties) > 0:
+        chosen_empty = calculate_optimal_choice(button_array, all_empties) 
+
+    if chosen_empty is not None:
+        debug_print("working on chosen_empty: %s" % (chosen_empty))
+       
+        for c in chosen_empty.available_choices:
             globals.total_guesses.set(globals.total_guesses.get() + 1)
-            pot_value = structs.PotentialValue(first_empty.row, first_empty.column, r)
+            pot_value = structs.PotentialValue(chosen_empty.row, chosen_empty.column, c)
             if isNewValueValid(button_array, pot_value):
-                update_button = utils.lambda_find_first(lambda i: i.row == first_empty.row and i.column == first_empty.column, button_array)
+                update_button = utils.find(lambda i: i.row == chosen_empty.row and i.column == chosen_empty.column, button_array)
                 assert update_button is not None
 
                 update_button.set_value(pot_value.value)
@@ -122,10 +178,31 @@ def guess(button_array):
                 else:
                     update_button.set_value(0)
 
-        #if we make it here then none of the random values were valid.  start unwinding.
+        #if we make it here then one of the previous values was invalid.  start unwinding.
         return False
     else:
         return True #all done, the remaining values are filled.
+
+def on_button_clicked(button_array, button):
+    if not button.hard_set:
+        new_value = simpledialog.askinteger("Enter a value.", "Number between 1-9, 0 to clear", minvalue=0, maxvalue=9)
+        if new_value is not None and new_value != 0:
+            pot_value = structs.PotentialValue(button.row, button.column, new_value)
+            if isNewValueValid(button_array, pot_value):
+                button.set_value(new_value)
+            else:
+                #calculate why.
+                conflict = utils.find(lambda b: b.row == button.row and b.value == new_value, button_array)
+                if conflict is None:
+                    conflict = utils.find(lambda b: b.column == button.column and b.value == new_value, button_array)
+                if conflict is None:
+                    conflict = utils.find(lambda b: isButtonInBlock(b, pot_value, get_block_size(button_array)) and b.value == new_value, button_array)
+                assert conflict is not None#there's a major issue in the logic if this hits.
+                messagebox.showwarning("Value is not valid.", "The value: " + str(new_value) + " is not a valid value for this location, it conflicts with the button's value at (row:" + str(conflict.row+1) + ", column:" + str(conflict.column+1) + ").  Please try again.")
+        elif new_value == 0:
+            button.set_value(new_value)
+    else:
+        messagebox.showerror("Sudoku Solver", "May not unset initial condition.")
 
 def startup_ui(rows, columns):
     root = Tk()
@@ -135,13 +212,16 @@ def startup_ui(rows, columns):
 
     globals.total_guesses = IntVar()
     button_array = []
+
+    #TODO: this needs to be initializable from somewhere besides this code.
     init_values = get_initial_values()
 
     for r in range(rows):
         for c in range(columns):
             button = buttons.SudokuButton(r, c, root, borderwidth = 1)
+            button.configure(command=partial(on_button_clicked, button_array, button))
             
-            #TODO: all this init code is just to debug the solver.  Need to init smarter.
+            #TODO: all this init code is just to write the solver.  Need to init smarter.
             init_value = init_values[r][c]
             if not init_value == 0:
                 button.set_init(init_values[r][c])
@@ -159,10 +239,15 @@ def startup_ui(rows, columns):
     reset_guesses_label = Label(root, text="Total Guesses:").grid(row=rows+4, columnspan=int(columns/2), sticky=E+W+N+S)
     root.mainloop()
 
+"""
+function used to make argparse reject values of rows or columns that cannot be used.
+"""
 def row_or_column_type(x):
     x = int(x)
     if x > MAX_ROWS_COLUMNS:
         raise argparse.ArgumentTypeError("Maximum rows/columns is " + str(MAX_ROWS_COLUMNS) + ".")
+    elif isqrt(x, raiseOnError=False) == -1: 
+        raise argparse.ArgumentTypeError("Input is required to be a perfect square.")        
     return x
 
 def setup_args():
@@ -182,6 +267,12 @@ def setup_args():
     args = arg_parser.parse_args()
     print("Hello, welcome to sudoku solver: ", args.name)
     DEBUG = args.debug
+    if (args.debug == True):
+        logging_level = logging.DEBUG
+    else:
+        logging_level = logging.INFO
+    logging.basicConfig(level=logging_level)
+
     debug_print("Debugging information is turned on")
     return (args.rows,args.columns)
 
