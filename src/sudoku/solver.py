@@ -6,7 +6,6 @@ import tkinter.messagebox as messagebox
 import tkinter.simpledialog as simpledialog
 from functools import partial, reduce
 from operator import attrgetter
-from threading import Timer
 
 #my own libraries
 import sudoku.utils as utils
