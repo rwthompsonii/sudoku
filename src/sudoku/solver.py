@@ -38,6 +38,17 @@ def get_initial_values():
             [0,0,0,4,1,9,0,0,5],
             [0,0,0,0,8,0,0,7,9]]
 
+def get_medium_initial_values():
+    return [[0,3,0,6,0,5,0,0,0],
+            [6,0,0,0,9,0,0,0,2],
+            [0,7,0,1,0,0,0,0,6],
+            [0,9,0,0,0,0,0,0,0],
+            [8,1,0,0,5,0,0,6,9],
+            [0,0,0,0,0,0,0,8,0],
+            [4,0,0,0,0,3,0,2,0],
+            [9,0,0,0,2,0,0,0,5],
+            [0,0,0,9,0,8,0,3,0]]
+
 def get_harder_initial_values():
     return [[0,0,0,0,0,0,0,0,0],
             [0,0,0,0,0,3,0,8,5],
@@ -245,7 +256,8 @@ def startup_ui(rows, columns):
 
     #TODO: this needs to be initializable from somewhere besides this code.
     #init_values = get_initial_values()
-    init_values = get_harder_initial_values()
+    #init_values = get_harder_initial_values()
+    init_values = get_medium_initial_values()
 
     assert isqrt(rows) != -1
     assert rows == columns
