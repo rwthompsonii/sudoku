@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import cProfile, pstats, io
 import sys, logging, argparse, pprint, random, math, os, time
 from  tkinter import *
 import tkinter.messagebox as messagebox
@@ -72,10 +73,10 @@ def isqrt(n, raiseOnError = True):
     else:
         return -1 #clearly not possible
 
-def isButtonInBlock(b, pot_value, block_size):
+def isButtonInBlock(b, row, column, block_size):
     #the modulus will be zero if i'm already on the starting row/column.
-    start_row = pot_value.row - (pot_value.row % block_size)
-    start_column = pot_value.column - (pot_value.column % block_size)
+    start_row = row - (row % block_size)
+    start_column = column - (column % block_size)
 
     #end row/column are not inclusive, that's actually the start of the next block
     end_row = start_row + block_size
@@ -86,8 +87,13 @@ def isButtonInBlock(b, pot_value, block_size):
            b.column >= start_column and \
            b.column < end_column
 
+block_size_calculated = 0
 #this function is the only one that actually requires a perfect square input.
 def get_block_size(button_array):
+    global block_size_calculated
+    if block_size_calculated != 0:
+        return block_size_calculated
+
     max_row = max(button_array, key=attrgetter('row')).row
     max_column = max(button_array, key=attrgetter('column')).column
     
@@ -95,12 +101,11 @@ def get_block_size(button_array):
     assert max_row == max_column
     block_size = isqrt(max_row + 1)
 
+    block_size_calculated = block_size
     return block_size
 
 def isValueInSameBlock(button_array, pot_value):
-    block_size = get_block_size(button_array)
-
-    return utils.find(lambda b: isButtonInBlock(b, pot_value, block_size) and b.value == pot_value.value, button_array) \
+    return utils.find(lambda b: b.value == pot_value.value and b.block == pot_value.block, button_array) \
                         is not None
     
 def isValueInRowOrColumn(button_array, pot_value):
@@ -112,26 +117,25 @@ def isValueInRowOrColumn(button_array, pot_value):
 def isNewValueValid(button_array, pot_value):
     return not isValueInSameBlock(button_array, pot_value) and not isValueInRowOrColumn(button_array, pot_value) 
 
+def is_relevant(row, column, block, b): 
+    return b.value != 0 and (b.row == row or b.column == column or b.block == block)
+
+class ImpossibleChoices(Exception):
+    pass
+
 def set_choices_for_button(button_array, empty_button):
-    pot_value = structs.PotentialValue(empty_button.row, empty_button.column, empty_button.value)
-    block_size = get_block_size(button_array)    
-    
     #function defined to look at the choice set defined by 
     #   1) row peers
     #   2) column peers
     #   3) block peers
-    is_peer = lambda b : b.row == empty_button.row or b.column == empty_button.column or isButtonInBlock(b, pot_value, block_size)
-    is_empty = lambda b : b.value == 0
-    is_relevant = lambda b: is_peer(b) and not is_empty(b)
-    relevant_peer_list = list(filter(is_relevant, button_array))
-    currently_valid_choices = set(range(1,10))
-
+    empty_button.available_choices = set(range(1,10))
     #remove any choice that's aleady present in the peer group, and you're left with the only valid choices for this button.
     #entirely possible to be left with the empty set, which should be noticed by other code as an impossibility for a valid empty button.
-    for p in relevant_peer_list:
-        currently_valid_choices.discard(p.value)
+    for peer in filter(partial(is_relevant, empty_button.row, empty_button.column, empty_button.block), button_array):
+        empty_button.available_choices.discard(peer.value)
+        if len(empty_button.available_choices) == 0:
+            break
 
-    empty_button.available_choices = currently_valid_choices
     return empty_button
 
 def calculate_optimal_choice(button_array, all_empties):
@@ -139,11 +143,12 @@ def calculate_optimal_choice(button_array, all_empties):
     #this is somewhat of a heuristic, as it's typically how a human would solve it.
 
     #map a function over all the empties which then sets the number of available choices it finds onto the button 
-    utils.map_in_place(partial(set_choices_for_button, button_array), all_empties)
+    all_empties = list(map(partial(set_choices_for_button, button_array), all_empties))
+    #utils.map_in_place(partial(set_choices_for_button, button_array), all_empties)
     
     #next, min the entire empties list with available choices as the determinant.
     #and return the result of that operation
-    return min(all_empties, key=lambda e: len(e.available_choices))
+    return min(all_empties, key=lambda e: len(e.available_choices)), all_empties
 
 def clear_button_func(full_clear, button):
     if button.hard_set == False:
@@ -161,8 +166,13 @@ def solve_action(button_array):
     debug_print("Solve action.")
    
     logger = logging.getLogger(__name__)
-   
+  
+    #pr = cProfile.Profile()
+    #pr.enable()
+    
     start_time = time.perf_counter()
+    #have to calculate this once.
+    block_size = get_block_size(button_array)
     solved = guess(button_array)
     end_time = time.perf_counter()
     if solved == True:
@@ -172,6 +182,13 @@ def solve_action(button_array):
         isYes = messagebox.askyesno("Sudoku Solver", "No solution found.  Full clear the board?")
         if (isYes): 
             clear_action(True, button_array)
+
+    #pr.disable()
+    #s = io.StringIO()
+    #sortby = 'cumulative'
+    #ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    #ps.print_stats()
+    #print(s.getvalue())
 
 def reset_guesses_count_action():
     globals.total_guesses.set(0)
@@ -183,24 +200,58 @@ def update_ui():
 
 def maybe_update_ui():
     now_time = time.perf_counter()
-    if (now_time - globals.refresh_ui_time) > 1.0:
+    if (now_time - globals.refresh_ui_time) > 0.1: 
         globals.refresh_ui_time = now_time
         update_ui()
 
-def guess(button_array):
+#these next two are the heart of the entire algorithm
+#in mark chosen, we remove from all of our empty peers our new choice, and remember them in case our choice doesn't work out.
+def mark_chosen(all_empties, pot_value):
+    for e in all_empties:
+        if pot_value.value in e.available_choices and \
+           (e.row == pot_value.row or \
+           e.column == pot_value.column or \
+           e.block == pot_value.block):
+               e.available_choices.remove(pot_value.value)
+               yield structs.PotentialValue(e.row, e.column, e.block, pot_value.value)
+
+#in mark_unchosen, we've failed to recurse at some point and need to restore the choices we removed in order to continue.
+def mark_unchosen(all_empties, previous_choices):
+    for e in all_empties:
+        for choice in previous_choices:
+            if e.row == choice.row and e.column == choice.column:
+                e.available_choices.add(choice.value)
+
+def guess(button_array, all_empties = None):
     chosen_empty = None
-    all_empties = list(filter(lambda i: i.value == 0 and i.hard_set == False, button_array))
-    
-    if len(all_empties) > 0:
-        chosen_empty = calculate_optimal_choice(button_array, all_empties) 
+    if all_empties is None: #calculate this only once.
+        all_empties = list(filter(lambda i: i.value == 0 and i.hard_set == False, button_array))
+        assert len(all_empties) > 0
+        chosen_empty, all_empties = calculate_optimal_choice(button_array, all_empties)#do the full calculation only once, it's very expensive.  
+    elif len(all_empties) > 0:
+        chosen_empty = min(all_empties, key=lambda e: len(e.available_choices))
 
     if chosen_empty is not None:
         debug_print("working on chosen_empty: %s" % (chosen_empty))
+
+        available_choices = chosen_empty.available_choices
+        #available_choices = list(chosen_empty.available_choices)
         #some puzzles are built to mess with us if we don't introduce at least a small 
         #amount of randomness.  we're working with the optimal button, but it has 1-9 choices
         #and you can construct sudokus that really like to mess with solvers that start with 1.
-        available_choices = list(chosen_empty.available_choices)
-        random.shuffle(available_choices)
+        #random.shuffle(available_choices)
+
+        #optimization here in case we have several buttons that all have only one available choice.
+        #just set them all now.  
+        #if len(available_choices) == 1:
+        #    only_one_choice_list = utils.find(lambda i: i.available_choices == 1 and not (i.row == chosen_empty.row and i.column == chosen_empty.column), all_empties)
+        #    if only_one_choice_list is not None:
+        #        for empty in only_one_choice_list:
+        #            assert len(list(empty.available_choices)) == 1
+        #            update_button = utils.find(lambda i: i.row == chosen_empty.row and i.column == chosen_empty.column, button_array)
+        #            assert update_button is not None
+        #            update_button.set_value(list(empty.available_choices)[0])
+                
         
         update_button = utils.find(lambda i: i.row == chosen_empty.row and i.column == chosen_empty.column, button_array)
         assert update_button is not None
@@ -211,11 +262,16 @@ def guess(button_array):
             maybe_update_ui()   
 
             update_button.set_value(c)
+            all_empties.remove(chosen_empty)
+            pot_value = structs.PotentialValue(chosen_empty.row, chosen_empty.column, chosen_empty.block, c)
+            discarded_choices = list(mark_chosen(all_empties, pot_value))
 
-            if guess(button_array):
+            if guess(button_array, all_empties):
                 return True #start unwinding
             else:
                 update_button.set_value(0)
+                mark_unchosen(all_empties, discarded_choices)
+                all_empties.append(chosen_empty)
 
         #if we make it here then one of the previous values was invalid.  start unwinding.
         return False
@@ -226,7 +282,7 @@ def on_button_clicked(button_array, button):
     if not button.hard_set:
         new_value = simpledialog.askinteger("Enter a value.", "Number between 1-9, 0 to clear", minvalue=0, maxvalue=9)
         if new_value is not None and new_value != 0:
-            pot_value = structs.PotentialValue(button.row, button.column, new_value)
+            pot_value = structs.PotentialValue(button.row, button.column, button.block, new_value)
             if isNewValueValid(button_array, pot_value):
                 button.set_value(new_value)
             else:
@@ -235,7 +291,7 @@ def on_button_clicked(button_array, button):
                 if conflict is None:
                     conflict = utils.find(lambda b: b.column == button.column and b.value == new_value, button_array)
                 if conflict is None:
-                    conflict = utils.find(lambda b: isButtonInBlock(b, pot_value, get_block_size(button_array)) and b.value == new_value, button_array)
+                    conflict = utils.find(lambda b: isButtonInBlock(b, pot_value.row, pot_value.column, get_block_size(button_array)) and b.value == new_value, button_array)
                 assert conflict is not None#there's a major issue in the logic if this hits.
                 messagebox.showwarning("Value is not valid.", "The value: " + str(new_value) + " is not a valid value for this location, it conflicts with the button's value at (row:" + str(conflict.row+1) + ", column:" + str(conflict.column+1) + ").  Please try again.")
         elif new_value == 0:
@@ -256,8 +312,8 @@ def startup_ui(rows, columns):
 
     #TODO: this needs to be initializable from somewhere besides this code.
     #init_values = get_initial_values()
-    #init_values = get_harder_initial_values()
-    init_values = get_medium_initial_values()
+    init_values = get_harder_initial_values()
+    #init_values = get_medium_initial_values()
 
     assert isqrt(rows) != -1
     assert rows == columns
@@ -276,7 +332,7 @@ def startup_ui(rows, columns):
             correct_frame_index = (r // block_size) * block_size + (c // block_size)      
             correct_frame = frame_array[correct_frame_index]
 
-            button = buttons.SudokuButton(r, c, correct_frame, borderwidth = 1)
+            button = buttons.SudokuButton(r, c, correct_frame_index, correct_frame, borderwidth = 1)
             button.configure(command=partial(on_button_clicked, button_array, button))
             
             #TODO: all this init code is just to write the solver.  Need to init smarter.

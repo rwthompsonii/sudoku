@@ -5,10 +5,11 @@ from tkinter import Button
 from tkinter import StringVar
 
 class SudokuButton(Button):
-    def __init__(self, row, column, master=None, **options):
+    def __init__(self, row, column, block, master=None, **options):
         super().__init__(master, options)
         self.row = row
         self.column = column
+        self.block = block
         self.value = 0 #the zero value is used to indicate that this is an invalid square to the backtracker.
         self.textvariable = StringVar()
         self.hard_set = False #used to indicate that this is part of the initial condition and should not be reset when backtracking/solving.
@@ -33,7 +34,7 @@ class SudokuButton(Button):
             self.textvariable.set("")
    
     def __repr__(self):
-        return 'SudokuButton(row=%s, column=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.value, self.textvariable.get(), self.hard_set)
+        return 'SudokuButton(row=%s, column=%s, block=%s, value=%s, textvariable=%s, hard_set=%s)' % (self.row, self.column, self.block, self.value, self.textvariable.get(), self.hard_set)
 
     def __str__(self):
         return self.__repr__()
