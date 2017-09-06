@@ -65,6 +65,7 @@ def isqrt(n, raiseOnError = True):
     #from https://stackoverflow.com/questions/15390807/integer-square-root-in-python/17495624
     #i don't really care that it overflows on large values because the input size is sanitized
     #much earlier.
+    assert(n >= 0)
     i = int(math.sqrt(n) + 0.5)
     if i**2 == n:
         return i
